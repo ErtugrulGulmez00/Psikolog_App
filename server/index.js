@@ -25,6 +25,7 @@ const httpServer = createServer(app);
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
+  'https://psikolog13.netlify.app',
   process.env.CLIENT_URL
 ].filter(Boolean);
 
