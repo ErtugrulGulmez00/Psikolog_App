@@ -44,12 +44,14 @@ const VideoCall = () => {
   const [callStatus, setCallStatus] = useState('connecting') // connecting, connected, ended
   const [remoteUser, setRemoteUser] = useState(null)
   const [remotePeerId, setRemotePeerId] = useState(null)
+  const [isRemoteMuted, setIsRemoteMuted] = useState(true) // Start muted for autoplay
 
   const localVideoRef = useRef(null)
   const remoteVideoRef = useRef(null)
   const peerRef = useRef(null)
   const screenStreamRef = useRef(null)
   const isInitiator = useRef(false)
+  const peerCreated = useRef(false)
 
   useEffect(() => {
     fetchAppointment()
@@ -258,7 +260,9 @@ const VideoCall = () => {
     // Save remote peer ID
     setRemotePeerId(userId)
     
-    if (localStream && !peerRef.current) {
+    // Prevent multiple peer creation
+    if (localStream && !peerCreated.current) {
+      peerCreated.current = true
       isInitiator.current = true
       console.log('Creating peer as initiator, target:', userId)
       peerRef.current = await createPeer(true, localStream, userId)
@@ -266,8 +270,8 @@ const VideoCall = () => {
   }
 
   const handleOffer = async ({ offer, from }) => {
-    // Prevent duplicate offer handling
-    if (isInitiator.current) {
+    // Prevent duplicate offer handling if we're the initiator
+    if (isInitiator.current && peerCreated.current) {
       console.log('Ignoring offer - we are the initiator')
       return
     }
@@ -275,7 +279,8 @@ const VideoCall = () => {
     console.log('Received offer from:', from)
     setRemotePeerId(from)
     
-    if (localStream && !peerRef.current) {
+    if (localStream && !peerCreated.current) {
+      peerCreated.current = true
       isInitiator.current = false
       console.log('Creating peer as receiver, from:', from)
       peerRef.current = await createPeer(false, localStream, from)
@@ -420,7 +425,10 @@ const VideoCall = () => {
     }
     if (peerRef.current) {
       peerRef.current.destroy()
+      peerRef.current = null
     }
+    peerCreated.current = false
+    isInitiator.current = false
   }
 
   const toggleFullscreen = () => {
@@ -447,13 +455,30 @@ const VideoCall = () => {
       <div className="flex-1 relative">
         {/* Remote Video (Main) */}
         <div className="absolute inset-0 flex items-center justify-center bg-neutral-900">
-          {/* Always render video element */}
+          {/* Always render video element - muted initially for autoplay */}
           <video
             ref={remoteVideoRef}
             autoPlay
             playsInline
+            muted={isRemoteMuted}
             className={`w-full h-full object-cover ${remoteStream ? 'block' : 'hidden'}`}
           />
+          
+          {/* Unmute button overlay */}
+          {remoteStream && isRemoteMuted && (
+            <button
+              onClick={() => {
+                setIsRemoteMuted(false)
+                if (remoteVideoRef.current) {
+                  remoteVideoRef.current.muted = false
+                  remoteVideoRef.current.play().catch(console.log)
+                }
+              }}
+              className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-10 bg-primary-500 hover:bg-primary-600 text-white px-6 py-3 rounded-full flex items-center gap-2 shadow-lg"
+            >
+              🔊 Sesi Aç
+            </button>
+          )}
           
           {/* Show placeholder when no stream */}
           {!remoteStream && (
