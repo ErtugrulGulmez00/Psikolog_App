@@ -4,9 +4,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   define: {
-    global: 'globalThis',
-    'process.env': {},
-    'process.nextTick': '(fn, ...args) => setTimeout(() => fn(...args), 0)'
+    global: 'globalThis'
   },
   resolve: {
     alias: {
