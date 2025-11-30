@@ -80,16 +80,54 @@ const VideoCall = () => {
     }
   }, [socket, localStream, isConnected])
 
+  // Handle local stream changes
+  useEffect(() => {
+    if (localStream && localVideoRef.current) {
+      console.log('Setting local stream to video element')
+      localVideoRef.current.srcObject = localStream
+      localVideoRef.current.play().catch(console.log)
+    }
+  }, [localStream])
+
   // Handle remote stream changes
   useEffect(() => {
     if (remoteStream && remoteVideoRef.current) {
-      console.log('Setting remote stream to video element')
+      console.log('Setting remote stream to video element, tracks:', remoteStream.getTracks().length)
+      
+      // Check if stream has video track
+      const hasVideo = remoteStream.getVideoTracks().length > 0
+      const hasAudio = remoteStream.getAudioTracks().length > 0
+      console.log('Stream has video:', hasVideo, 'audio:', hasAudio)
+      
+      // Set stream to video element
       remoteVideoRef.current.srcObject = remoteStream
-      remoteVideoRef.current.play().catch(e => {
-        console.log('Autoplay prevented, user interaction needed:', e)
-      })
+      
+      // Try to play
+      const playPromise = remoteVideoRef.current.play()
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.log('✅ Remote video playing successfully')
+            // If muted initially, unmute after successful play
+            if (isRemoteMuted && hasAudio) {
+              setTimeout(() => {
+                setIsRemoteMuted(false)
+                if (remoteVideoRef.current) {
+                  remoteVideoRef.current.muted = false
+                }
+              }, 500)
+            }
+          })
+          .catch(e => {
+            console.log('⚠️ Remote video autoplay prevented:', e)
+            setIsRemoteMuted(true) // Show unmute button
+          })
+      }
+    } else if (remoteVideoRef.current && !remoteStream) {
+      // Clear video element when stream is removed
+      remoteVideoRef.current.srcObject = null
     }
-  }, [remoteStream])
+  }, [remoteStream, isRemoteMuted])
 
   const fetchAppointment = async () => {
     try {
@@ -210,19 +248,24 @@ const VideoCall = () => {
         })
         
         setRemoteStream(remoteMediaStream)
-        
-        // Ensure video element gets the stream
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = remoteMediaStream
-          remoteVideoRef.current.play().catch(e => console.log('Autoplay prevented:', e))
-        }
         setCallStatus('connected')
       })
 
       peer.on('track', (track, stream) => {
-        console.log('🎵 Received track:', track.kind)
-        if (remoteVideoRef.current && !remoteVideoRef.current.srcObject) {
+        console.log('🎵 Received track:', track.kind, 'from stream with', stream.getTracks().length, 'tracks')
+        
+        // Update remote stream state
+        setRemoteStream(stream)
+        
+        // Also directly set to video element for immediate display
+        if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = stream
+          // Force play
+          remoteVideoRef.current.play().catch(e => {
+            console.log('Video play error:', e)
+            // If autoplay fails, try again after user interaction
+            setIsRemoteMuted(true) // Show unmute button
+          })
         }
       })
 
@@ -461,7 +504,8 @@ const VideoCall = () => {
             autoPlay
             playsInline
             muted={isRemoteMuted}
-            className={`w-full h-full object-cover ${remoteStream ? 'block' : 'hidden'}`}
+            className="w-full h-full object-cover"
+            style={{ display: remoteStream ? 'block' : 'none' }}
           />
           
           {/* Unmute button overlay */}
