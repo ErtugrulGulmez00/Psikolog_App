@@ -150,8 +150,25 @@ const VideoCall = () => {
   const initializeMedia = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: 'user'
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true
+        }
+      })
+      
+      // Log stream tracks
+      const videoTracks = stream.getVideoTracks()
+      const audioTracks = stream.getAudioTracks()
+      console.log('📹 Local stream initialized:', {
+        videoTracks: videoTracks.length,
+        audioTracks: audioTracks.length,
+        videoEnabled: videoTracks[0]?.enabled,
+        audioEnabled: audioTracks[0]?.enabled
       })
       
       setLocalStream(stream)
@@ -191,6 +208,25 @@ const VideoCall = () => {
     try {
       const Peer = await loadSimplePeer()
       
+      // Verify stream has video and audio tracks
+      const videoTracks = stream.getVideoTracks()
+      const audioTracks = stream.getAudioTracks()
+      console.log('🔍 Creating peer with stream:', {
+        initiator,
+        target: targetPeerId,
+        videoTracks: videoTracks.length,
+        audioTracks: audioTracks.length,
+        videoTrackId: videoTracks[0]?.id,
+        audioTrackId: audioTracks[0]?.id
+      })
+      
+      if (videoTracks.length === 0) {
+        console.warn('⚠️ No video tracks in stream!')
+      }
+      if (audioTracks.length === 0) {
+        console.warn('⚠️ No audio tracks in stream!')
+      }
+      
       // ICE servers with TURN for NAT traversal
       const iceServers = [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -218,7 +254,7 @@ const VideoCall = () => {
       const config = {
         initiator,
         trickle: true,
-        stream,
+        stream, // Pass the stream with all tracks
         config: {
           iceServers,
           iceCandidatePoolSize: 10
@@ -227,15 +263,53 @@ const VideoCall = () => {
       
       console.log('Creating peer, initiator:', initiator, 'target:', targetPeerId)
       const peer = new Peer(config)
+      
+      // Verify and ensure video track is added to peer connection
+      setTimeout(() => {
+        if (peer._pc && stream) {
+          const transceivers = peer._pc.getTransceivers()
+          const videoTracks = stream.getVideoTracks()
+          const audioTracks = stream.getAudioTracks()
+          
+          console.log('📡 RTCPeerConnection transceivers:', transceivers.length)
+          console.log('📹 Stream tracks - video:', videoTracks.length, 'audio:', audioTracks.length)
+          
+          // Check if video transceiver exists
+          const hasVideoTransceiver = transceivers.some(t => 
+            t.sender.track?.kind === 'video' || t.receiver.track?.kind === 'video'
+          )
+          
+          // If we have video track but no video transceiver, add it
+          if (videoTracks.length > 0 && !hasVideoTransceiver) {
+            console.log('⚠️ Video track exists but no video transceiver found, adding...')
+            const videoTrack = videoTracks[0]
+            const sender = peer._pc.addTrack(videoTrack, stream)
+            console.log('✅ Video track added to peer connection')
+          }
+          
+          transceivers.forEach((transceiver, index) => {
+            console.log(`Transceiver ${index}:`, {
+              kind: transceiver.receiver.track?.kind || transceiver.sender.track?.kind,
+              direction: transceiver.direction,
+              currentDirection: transceiver.currentDirection,
+              trackId: transceiver.receiver.track?.id || transceiver.sender.track?.id
+            })
+          })
+        }
+      }, 500)
 
       peer.on('signal', (signal) => {
         const to = targetPeerId || remotePeerId
-        console.log('📤 Sending signal to:', to, 'type:', signal.type || 'ice-candidate')
+        console.log('📤 Sending signal to:', to, 'type:', signal.type || signal.transceiverRequest || 'ice-candidate')
         
         if (signal.type === 'offer') {
           socket.emit('offer', { roomId, offer: signal, to })
         } else if (signal.type === 'answer') {
           socket.emit('answer', { roomId, answer: signal, to })
+        } else if (signal.transceiverRequest) {
+          // Handle transceiver request - add video track if needed
+          console.log('📹 Transceiver request received, ensuring video track is added')
+          socket.emit('transceiver-request', { roomId, request: signal, to })
         } else if (signal.candidate) {
           socket.emit('ice-candidate', { roomId, candidate: signal, to })
         }
