@@ -78,6 +78,17 @@ const VideoCall = () => {
     }
   }, [socket, localStream, isConnected])
 
+  // Handle remote stream changes
+  useEffect(() => {
+    if (remoteStream && remoteVideoRef.current) {
+      console.log('Setting remote stream to video element')
+      remoteVideoRef.current.srcObject = remoteStream
+      remoteVideoRef.current.play().catch(e => {
+        console.log('Autoplay prevented, user interaction needed:', e)
+      })
+    }
+  }, [remoteStream])
+
   const fetchAppointment = async () => {
     try {
       // Find appointment by roomId
@@ -140,26 +151,46 @@ const VideoCall = () => {
     try {
       const Peer = await loadSimplePeer()
       
+      // ICE servers with TURN for NAT traversal
+      const iceServers = [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:global.stun.twilio.com:3478' },
+        // Free TURN servers from Open Relay Project
+        {
+          urls: 'turn:openrelay.metered.ca:80',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:443',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+          username: 'openrelayproject',
+          credential: 'openrelayproject'
+        }
+      ]
+      
       const config = {
         initiator,
         trickle: true,
         stream,
         config: {
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:stun3.l.google.com:19302' },
-            { urls: 'stun:stun4.l.google.com:19302' },
-          ]
+          iceServers,
+          iceCandidatePoolSize: 10
         }
       }
       
+      console.log('Creating peer, initiator:', initiator, 'target:', targetPeerId)
       const peer = new Peer(config)
 
       peer.on('signal', (signal) => {
         const to = targetPeerId || remotePeerId
-        console.log('Sending signal to:', to, 'type:', signal.type || 'candidate')
+        console.log('📤 Sending signal to:', to, 'type:', signal.type || 'ice-candidate')
         
         if (signal.type === 'offer') {
           socket.emit('offer', { roomId, offer: signal, to })
@@ -171,27 +202,45 @@ const VideoCall = () => {
       })
 
       peer.on('stream', (remoteMediaStream) => {
-        console.log('Received remote stream')
+        console.log('🎥 Received remote stream with tracks:', remoteMediaStream.getTracks().length)
+        remoteMediaStream.getTracks().forEach(track => {
+          console.log('Track:', track.kind, 'enabled:', track.enabled, 'readyState:', track.readyState)
+        })
+        
         setRemoteStream(remoteMediaStream)
+        
+        // Ensure video element gets the stream
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = remoteMediaStream
+          remoteVideoRef.current.play().catch(e => console.log('Autoplay prevented:', e))
         }
         setCallStatus('connected')
       })
 
+      peer.on('track', (track, stream) => {
+        console.log('🎵 Received track:', track.kind)
+        if (remoteVideoRef.current && !remoteVideoRef.current.srcObject) {
+          remoteVideoRef.current.srcObject = stream
+        }
+      })
+
       peer.on('connect', () => {
-        console.log('Peer connected!')
+        console.log('✅ Peer connected!')
         setCallStatus('connected')
       })
 
       peer.on('error', (error) => {
-        console.error('Peer error:', error)
-        toast.error('Bağlantı hatası oluştu')
+        console.error('❌ Peer error:', error)
+        toast.error('Bağlantı hatası: ' + error.message)
       })
 
       peer.on('close', () => {
-        console.log('Peer connection closed')
+        console.log('🔴 Peer connection closed')
         setCallStatus('ended')
+      })
+
+      peer.on('iceStateChange', (state) => {
+        console.log('🧊 ICE state:', state)
       })
 
       return peer
@@ -384,16 +433,18 @@ const VideoCall = () => {
       {/* Video Area */}
       <div className="flex-1 relative">
         {/* Remote Video (Main) */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          {remoteStream ? (
-            <video
-              ref={remoteVideoRef}
-              autoPlay
-              playsInline
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <div className="flex flex-col items-center justify-center text-white">
+        <div className="absolute inset-0 flex items-center justify-center bg-neutral-900">
+          {/* Always render video element */}
+          <video
+            ref={remoteVideoRef}
+            autoPlay
+            playsInline
+            className={`w-full h-full object-cover ${remoteStream ? 'block' : 'hidden'}`}
+          />
+          
+          {/* Show placeholder when no stream */}
+          {!remoteStream && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-white">
               <Avatar
                 src={remoteUser?.avatar}
                 firstName={remoteUser?.firstName}
