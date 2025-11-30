@@ -100,6 +100,7 @@ export const initializeSocket = (io) => {
     });
 
     socket.on('ice-candidate', ({ roomId, candidate, to }) => {
+      console.log(`ICE candidate from ${socket.user.id} to ${to || 'room'} in room ${roomId}`);
       if (to) {
         socket.to(to).emit('ice-candidate', {
           candidate,

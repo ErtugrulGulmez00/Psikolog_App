@@ -139,11 +139,30 @@ router.get('/me', protect, async (req, res) => {
   try {
     const { data: user, error } = await supabase
       .from('users')
-      .select('*, assigned_psychologist:users!users_assigned_psychologist_fkey(id, first_name, last_name)')
+      .select('*')
       .eq('id', req.user.id)
       .single();
 
     if (error) throw error;
+
+    // Get assigned psychologist info if exists
+    let assignedPsychologistData = null;
+    if (user.assigned_psychologist) {
+      const { data: psychologist } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, avatar')
+        .eq('id', user.assigned_psychologist)
+        .single();
+      
+      if (psychologist) {
+        assignedPsychologistData = {
+          id: psychologist.id,
+          firstName: psychologist.first_name,
+          lastName: psychologist.last_name,
+          avatar: psychologist.avatar
+        };
+      }
+    }
 
     // Transform to camelCase
     const transformedUser = {
@@ -167,7 +186,7 @@ router.get('/me', protect, async (req, res) => {
       reviewCount: user.review_count,
       isVerified: user.is_verified,
       isActive: user.is_active,
-      assignedPsychologist: user.assigned_psychologist,
+      assignedPsychologist: assignedPsychologistData,
       medicalHistory: user.medical_history,
       emergencyContact: user.emergency_contact
     };
