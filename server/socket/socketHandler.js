@@ -68,17 +68,10 @@ export const initializeSocket = (io) => {
       });
     });
 
-    // WebRTC Signaling
+    // WebRTC Signaling - Only broadcast to room to prevent duplicates
     socket.on('offer', ({ roomId, offer, to }) => {
       console.log(`Offer from ${socket.user.id} to ${to} in room ${roomId}`);
-      // Send to specific user and also broadcast to room
-      if (to) {
-        socket.to(to).emit('offer', {
-          offer,
-          from: socket.user.id
-        });
-      }
-      // Also broadcast to room as fallback
+      // Broadcast to room only (all other users in the room)
       socket.to(roomId).emit('offer', {
         offer,
         from: socket.user.id
@@ -87,12 +80,7 @@ export const initializeSocket = (io) => {
 
     socket.on('answer', ({ roomId, answer, to }) => {
       console.log(`Answer from ${socket.user.id} to ${to} in room ${roomId}`);
-      if (to) {
-        socket.to(to).emit('answer', {
-          answer,
-          from: socket.user.id
-        });
-      }
+      // Broadcast to room only
       socket.to(roomId).emit('answer', {
         answer,
         from: socket.user.id
@@ -100,13 +88,7 @@ export const initializeSocket = (io) => {
     });
 
     socket.on('ice-candidate', ({ roomId, candidate, to }) => {
-      console.log(`ICE candidate from ${socket.user.id} to ${to || 'room'} in room ${roomId}`);
-      if (to) {
-        socket.to(to).emit('ice-candidate', {
-          candidate,
-          from: socket.user.id
-        });
-      }
+      // Broadcast to room only
       socket.to(roomId).emit('ice-candidate', {
         candidate,
         from: socket.user.id

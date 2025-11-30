@@ -4,6 +4,7 @@
     <script>
       window.global = window;
       window.process = window.process || { env: {}, browser: true };
+      window.process.nextTick = window.process.nextTick || function(fn) { setTimeout(fn, 0); };
       if (typeof window.Buffer === 'undefined') {
         window.Buffer = { isBuffer: () => false };
       }

@@ -266,6 +266,12 @@ const VideoCall = () => {
   }
 
   const handleOffer = async ({ offer, from }) => {
+    // Prevent duplicate offer handling
+    if (isInitiator.current) {
+      console.log('Ignoring offer - we are the initiator')
+      return
+    }
+    
     console.log('Received offer from:', from)
     setRemotePeerId(from)
     
@@ -276,27 +282,34 @@ const VideoCall = () => {
       
       // Small delay to ensure peer is ready
       setTimeout(() => {
-        if (peerRef.current) {
+        if (peerRef.current && !peerRef.current.destroyed) {
           console.log('Signaling offer to peer')
           peerRef.current.signal(offer)
         }
       }, 100)
-    } else if (peerRef.current) {
+    } else if (peerRef.current && !peerRef.current.destroyed) {
       peerRef.current.signal(offer)
     }
   }
 
   const handleAnswer = ({ answer, from }) => {
     console.log('Received answer from:', from)
-    if (peerRef.current) {
-      peerRef.current.signal(answer)
+    if (peerRef.current && !peerRef.current.destroyed) {
+      try {
+        peerRef.current.signal(answer)
+      } catch (e) {
+        console.log('Answer signal error (ignored):', e.message)
+      }
     }
   }
 
   const handleIceCandidate = ({ candidate, from }) => {
-    console.log('Received ICE candidate from:', from)
-    if (peerRef.current && candidate) {
-      peerRef.current.signal(candidate)
+    if (peerRef.current && !peerRef.current.destroyed && candidate) {
+      try {
+        peerRef.current.signal(candidate)
+      } catch (e) {
+        console.log('ICE signal error (ignored):', e.message)
+      }
     }
   }
 

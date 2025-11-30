@@ -5,7 +5,8 @@ export default defineConfig({
   plugins: [react()],
   define: {
     global: 'globalThis',
-    'process.env': {}
+    'process.env': {},
+    'process.nextTick': '(fn, ...args) => setTimeout(() => fn(...args), 0)'
   },
   resolve: {
     alias: {
