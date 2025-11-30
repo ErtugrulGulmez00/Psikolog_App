@@ -49,35 +49,64 @@ export const initializeSocket = (io) => {
 
     // Handle joining a video call room
     socket.on('join-room', ({ roomId, peerId }) => {
+      console.log(`User ${socket.user.firstName} joining room: ${roomId}`);
       socket.join(roomId);
+      
+      // Notify others in the room
       socket.to(roomId).emit('user-joined', {
-        peerId,
+        peerId: peerId || socket.user.id,
         userId: socket.user.id,
         userName: `${socket.user.firstName} ${socket.user.lastName}`
       });
 
+      // Handle room-specific disconnect
       socket.on('disconnect', () => {
-        socket.to(roomId).emit('user-left', { peerId, userId: socket.user.id });
+        socket.to(roomId).emit('user-left', { 
+          peerId: peerId || socket.user.id, 
+          userId: socket.user.id 
+        });
       });
     });
 
     // WebRTC Signaling
     socket.on('offer', ({ roomId, offer, to }) => {
-      socket.to(to).emit('offer', {
+      console.log(`Offer from ${socket.user.id} to ${to} in room ${roomId}`);
+      // Send to specific user and also broadcast to room
+      if (to) {
+        socket.to(to).emit('offer', {
+          offer,
+          from: socket.user.id
+        });
+      }
+      // Also broadcast to room as fallback
+      socket.to(roomId).emit('offer', {
         offer,
         from: socket.user.id
       });
     });
 
     socket.on('answer', ({ roomId, answer, to }) => {
-      socket.to(to).emit('answer', {
+      console.log(`Answer from ${socket.user.id} to ${to} in room ${roomId}`);
+      if (to) {
+        socket.to(to).emit('answer', {
+          answer,
+          from: socket.user.id
+        });
+      }
+      socket.to(roomId).emit('answer', {
         answer,
         from: socket.user.id
       });
     });
 
     socket.on('ice-candidate', ({ roomId, candidate, to }) => {
-      socket.to(to).emit('ice-candidate', {
+      if (to) {
+        socket.to(to).emit('ice-candidate', {
+          candidate,
+          from: socket.user.id
+        });
+      }
+      socket.to(roomId).emit('ice-candidate', {
         candidate,
         from: socket.user.id
       });

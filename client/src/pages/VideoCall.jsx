@@ -43,11 +43,13 @@ const VideoCall = () => {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [callStatus, setCallStatus] = useState('connecting') // connecting, connected, ended
   const [remoteUser, setRemoteUser] = useState(null)
+  const [remotePeerId, setRemotePeerId] = useState(null)
 
   const localVideoRef = useRef(null)
   const remoteVideoRef = useRef(null)
   const peerRef = useRef(null)
   const screenStreamRef = useRef(null)
+  const isInitiator = useRef(false)
 
   useEffect(() => {
     fetchAppointment()
@@ -134,30 +136,51 @@ const VideoCall = () => {
     socket.on('user-toggle-audio', handleRemoteToggleAudio)
   }
 
-  const createPeer = async (initiator, stream) => {
+  const createPeer = async (initiator, stream, targetPeerId) => {
     try {
       const Peer = await loadSimplePeer()
-      const peer = new Peer({
+      
+      const config = {
         initiator,
         trickle: true,
-        stream
-      })
+        stream,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' },
+          ]
+        }
+      }
+      
+      const peer = new Peer(config)
 
       peer.on('signal', (signal) => {
+        const to = targetPeerId || remotePeerId
+        console.log('Sending signal to:', to, 'type:', signal.type || 'candidate')
+        
         if (signal.type === 'offer') {
-          socket.emit('offer', { roomId, offer: signal, to: remoteUser?.id || remoteUser?._id })
+          socket.emit('offer', { roomId, offer: signal, to })
         } else if (signal.type === 'answer') {
-          socket.emit('answer', { roomId, answer: signal, to: remoteUser?.id || remoteUser?._id })
+          socket.emit('answer', { roomId, answer: signal, to })
         } else if (signal.candidate) {
-          socket.emit('ice-candidate', { roomId, candidate: signal, to: remoteUser?.id || remoteUser?._id })
+          socket.emit('ice-candidate', { roomId, candidate: signal, to })
         }
       })
 
-      peer.on('stream', (stream) => {
-        setRemoteStream(stream)
+      peer.on('stream', (remoteMediaStream) => {
+        console.log('Received remote stream')
+        setRemoteStream(remoteMediaStream)
         if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = stream
+          remoteVideoRef.current.srcObject = remoteMediaStream
         }
+        setCallStatus('connected')
+      })
+
+      peer.on('connect', () => {
+        console.log('Peer connected!')
         setCallStatus('connected')
       })
 
@@ -167,6 +190,7 @@ const VideoCall = () => {
       })
 
       peer.on('close', () => {
+        console.log('Peer connection closed')
         setCallStatus('ended')
       })
 
@@ -179,31 +203,50 @@ const VideoCall = () => {
   }
 
   const handleUserJoined = async ({ peerId, userId, userName }) => {
-    console.log('User joined:', userName)
+    console.log('User joined:', userName, 'userId:', userId)
     toast.success(`${userName} görüşmeye katıldı`)
     
-    if (localStream) {
-      peerRef.current = await createPeer(true, localStream)
+    // Save remote peer ID
+    setRemotePeerId(userId)
+    
+    if (localStream && !peerRef.current) {
+      isInitiator.current = true
+      console.log('Creating peer as initiator, target:', userId)
+      peerRef.current = await createPeer(true, localStream, userId)
     }
   }
 
   const handleOffer = async ({ offer, from }) => {
-    if (localStream) {
-      peerRef.current = await createPeer(false, localStream)
-      if (peerRef.current) {
-        peerRef.current.signal(offer)
-      }
+    console.log('Received offer from:', from)
+    setRemotePeerId(from)
+    
+    if (localStream && !peerRef.current) {
+      isInitiator.current = false
+      console.log('Creating peer as receiver, from:', from)
+      peerRef.current = await createPeer(false, localStream, from)
+      
+      // Small delay to ensure peer is ready
+      setTimeout(() => {
+        if (peerRef.current) {
+          console.log('Signaling offer to peer')
+          peerRef.current.signal(offer)
+        }
+      }, 100)
+    } else if (peerRef.current) {
+      peerRef.current.signal(offer)
     }
   }
 
-  const handleAnswer = ({ answer }) => {
+  const handleAnswer = ({ answer, from }) => {
+    console.log('Received answer from:', from)
     if (peerRef.current) {
       peerRef.current.signal(answer)
     }
   }
 
-  const handleIceCandidate = ({ candidate }) => {
-    if (peerRef.current) {
+  const handleIceCandidate = ({ candidate, from }) => {
+    console.log('Received ICE candidate from:', from)
+    if (peerRef.current && candidate) {
       peerRef.current.signal(candidate)
     }
   }
