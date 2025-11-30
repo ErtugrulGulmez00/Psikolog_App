@@ -206,3 +206,4 @@ CREATE POLICY "Service key full access" ON blogs FOR ALL USING (true);
 CREATE POLICY "Service key full access" ON comments FOR ALL USING (true);
 CREATE POLICY "Service key full access" ON payments FOR ALL USING (true);
 
+
